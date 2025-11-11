@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Base64;
 
 public class FileServer {
 
@@ -79,6 +80,42 @@ public class FileServer {
                         }
                         writer.flush();
                         break;
+                                        case "WRITE":
+                        // WRITE <filename> <base64_contents>
+                        if (parts.length < 3) {
+                            writer.println("ERROR: Usage: WRITE <filename> <base64_contents>");
+                            break;
+                        }
+                        try {
+                            byte[] data = Base64.getDecoder().decode(parts[2]);
+                            fsManager.writeFile(parts[1], data);
+                            writer.println("File written: " + parts[1]);
+                        } catch (IllegalArgumentException e) {
+                            writer.println("ERROR: " + e.getMessage());
+                        } catch (Exception e) {
+                            writer.println("ERROR: Write failed: " + e.getMessage());
+                        }
+                        writer.flush();
+                        break;
+
+                    case "READ":
+                        // READ <filename> -> returns base64 payload on single line
+                        if (parts.length < 2) {
+                            writer.println("ERROR: Filename not provided");
+                            break;
+                        }
+                        try {
+                            byte[] out = fsManager.readFile(parts[1]);
+                            String b64 = Base64.getEncoder().encodeToString(out);
+                            writer.println("DATA " + b64);
+                        } catch (IllegalArgumentException e) {
+                            writer.println("ERROR: " + e.getMessage());
+                        } catch (Exception e) {
+                            writer.println("ERROR: Read failed: " + e.getMessage());
+                        }
+                        writer.flush();
+                        break;
+    
 
                     case "LIST":
                         String[] filesArray = fsManager.listFiles();
