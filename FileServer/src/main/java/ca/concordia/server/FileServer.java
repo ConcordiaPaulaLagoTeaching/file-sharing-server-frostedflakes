@@ -7,13 +7,11 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Base64;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class FileServer {
 
     private FileSystemManager fsManager;
     private int port;
-    private static final AtomicInteger threadCounter = new AtomicInteger(0);
     public FileServer(int port, String fileSystemName, int totalSize){
         // Initialize the FileSystemManager
         FileSystemManager fsManager = new FileSystemManager(fileSystemName,
@@ -28,8 +26,7 @@ public class FileServer {
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                int threadNum = threadCounter.incrementAndGet();
-                System.out.println("Handling client: " + clientSocket + " (thread #" + threadNum + ")");
+                System.out.println("Handling client: " + clientSocket );
 
                 Thread.startVirtualThread(() -> handleClient(clientSocket));
             }
@@ -48,7 +45,6 @@ public class FileServer {
         ) {
             String line;
             while ((line = reader.readLine()) != null) {
-                //System.out.println("[thread #" + threadNum + "] Received from client: " + line);
                 String[] parts = line.split(" ");
                 String command = parts[0].toUpperCase();
 
