@@ -7,11 +7,13 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class FileServer {
 
     private FileSystemManager fsManager;
     private int port;
+    private static final AtomicInteger threadCounter = new AtomicInteger(0);
     public FileServer(int port, String fileSystemName, int totalSize){
         // Initialize the FileSystemManager
         FileSystemManager fsManager = new FileSystemManager(fileSystemName,
@@ -26,10 +28,11 @@ public class FileServer {
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                System.out.println("Handling client: " + clientSocket);
+                int threadNum = threadCounter.incrementAndGet();
+                System.out.println("Handling client: " + clientSocket + " (thread #" + threadNum + ")");
 
-                //create a new thread to handle the client
-                Thread clientHandler = new Thread(() -> handleClient(clientSocket));
+                // create a new thread to handle the client and pass the thread number
+                Thread clientHandler = new Thread(() -> handleClient(clientSocket, threadNum), "ClientHandler-" + threadNum);
                 clientHandler.start();
             }
 
@@ -40,14 +43,14 @@ public class FileServer {
     }
 
 
-    private void handleClient(Socket clientSocket) {
+    private void handleClient(Socket clientSocket, int threadNum) {
         try (
                 BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
                 PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true)
         ) {
             String line;
             while ((line = reader.readLine()) != null) {
-                System.out.println("Received from client: " + line);
+                System.out.println("[thread #" + threadNum + "] Received from client: " + line);
                 String[] parts = line.split(" ");
                 String command = parts[0].toUpperCase();
 
