@@ -31,9 +31,7 @@ public class FileServer {
                 int threadNum = threadCounter.incrementAndGet();
                 System.out.println("Handling client: " + clientSocket + " (thread #" + threadNum + ")");
 
-                // create a new thread to handle the client and pass the thread number
-                Thread clientHandler = new Thread(() -> handleClient(clientSocket, threadNum), "ClientHandler-" + threadNum);
-                clientHandler.start();
+                Thread.startVirtualThread(() -> handleClient(clientSocket));
             }
 
         } catch (Exception e) {
@@ -43,14 +41,14 @@ public class FileServer {
     }
 
 
-    private void handleClient(Socket clientSocket, int threadNum) {
+    private void handleClient(Socket clientSocket) {
         try (
                 BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
                 PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true)
         ) {
             String line;
             while ((line = reader.readLine()) != null) {
-                System.out.println("[thread #" + threadNum + "] Received from client: " + line);
+                //System.out.println("[thread #" + threadNum + "] Received from client: " + line);
                 String[] parts = line.split(" ");
                 String command = parts[0].toUpperCase();
 
