@@ -2,6 +2,7 @@ package ca.concordia.filesystem;
 
 import ca.concordia.filesystem.datastructures.FEntry;
 
+import java.io.File;
 import java.io.RandomAccessFile;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -18,10 +19,30 @@ public class FileSystemManager {
     private final ReentrantReadWriteLock.WriteLock writeLock = rwLock.writeLock();
 
     private static final int BLOCK_SIZE = 128; // Example block size
-    
+
     private FEntry[] inodeTable; // Array of inodes
     private boolean[] freeBlockList; // Bitmap for free blocks
     private int[] blockNext;
+
+    // saves the filesystem’s metadata so it’s still there next time the program runs
+    private void saveMetadata() throws Exception {
+        disk.seek(0);
+
+        for (int i = 0; i < inodeTable.length; i++) {
+            FEntry e = inodeTable[i];
+            disk.writeUTF(e.getFilename());
+            disk.writeShort(e.getFilesize());
+            disk.writeShort(e.getFirstBlock());
+        }
+
+        for (int i = 0; i < freeBlockList.length; i++) {
+            disk.writeBoolean(freeBlockList[i]);
+        }
+
+        for (int i = 0; i < blockNext.length; i++) {
+            disk.writeInt(blockNext[i]);
+        }
+    }
 
     public FileSystemManager(String filename, int totalSize) {
 
@@ -30,21 +51,49 @@ public class FileSystemManager {
 
                 // Open or create the disk file and set its size
                 this.disk = new RandomAccessFile(filename, "rw");
-                this.disk.setLength(totalSize);
 
                 // Initialize inode table and free block list
                 inodeTable = new FEntry[MAXFILES];
                 freeBlockList = new boolean[MAXBLOCKS];
+                blockNext = new int[MAXBLOCKS];  // create the array that keeps track of how blocks are linked together
 
-                // Mark all FEntries as unused
-                for (int i = 0; i < MAXFILES; i++)
-                    inodeTable[i] = new FEntry("", (short) 0, (short) -1);
+                File f = new File(filename);
+                boolean fresh = !f.exists() || this.disk.length() == 0;  // check if disk file is new or empty
 
-                // Mark all blocks as free
-                for (int i = 0; i < MAXBLOCKS; i++)
-                    freeBlockList[i] = true;
+                if (fresh) {  // creating a new empty filesystem for the first run
+                    this.disk.setLength(totalSize);
 
-                System.out.println("File system initialized.");
+                    // Mark all FEntries as unused
+                    for (int i = 0; i < MAXFILES; i++)
+                        inodeTable[i] = new FEntry("", (short) 0, (short) -1);
+
+                    // Mark all blocks as free
+                    for (int i = 0; i < MAXBLOCKS; i++) {
+                        freeBlockList[i] = true;
+                        blockNext[i] = -1;
+                    }
+
+                    saveMetadata();
+                    System.out.println("File system initialized.");
+
+                } else { // reload the filesystem metadata that was stored on disk
+                    this.disk.seek(0);
+
+                    for (int i = 0; i < MAXFILES; i++) {
+                        String name = disk.readUTF();
+                        short size = disk.readShort();
+                        short first = disk.readShort();
+                        inodeTable[i] = new FEntry(name, size, first);
+                    }
+
+                    for (int i = 0; i < MAXBLOCKS; i++)
+                        freeBlockList[i] = disk.readBoolean();
+
+                    for (int i = 0; i < MAXBLOCKS; i++)
+                        blockNext[i] = disk.readInt();
+
+                    System.out.println("Existing filesystem loaded.");
+                }
 
                 // Set the singleton instance
                 instance = this;
@@ -85,17 +134,21 @@ public class FileSystemManager {
                     break;
                 }
             }
-            
+
             if (freeIndex == -1) {
                 throw new IllegalArgumentException("No space for new file.");
             }
-                            // initialize block chain metadata (-1 = no next)
-                blockNext = new int[MAXBLOCKS];
-                for (int i = 0; i < MAXBLOCKS; i++)
-                    blockNext[i] = -1;
+
+            // initialize block chain metadata (-1 = no next)
+            blockNext = new int[MAXBLOCKS];
+            for (int i = 0; i < MAXBLOCKS; i++)
+                blockNext[i] = -1;
 
             //create a new file entry and assign it to the free index
             inodeTable[freeIndex] = new FEntry(fileName, (short) 0, (short) -1);
+
+            saveMetadata();
+
             System.out.println("File created successfully.");
 
         } finally {
@@ -142,6 +195,7 @@ public class FileSystemManager {
 
             //clear the entry
             inodeTable[index] = new FEntry("", (short) 0, (short) -1);
+            saveMetadata();
             System.out.println("File" + fileName + "deleted successfully.");
 
         } finally {
@@ -149,7 +203,7 @@ public class FileSystemManager {
         }
     }
 
-        public void writeFile(String fileName, byte[] contents) throws Exception {
+    public void writeFile(String fileName, byte[] contents) throws Exception {
 
         if (fileName.length() > 11) {
             throw new IllegalArgumentException("filename too long");
@@ -177,7 +231,7 @@ public class FileSystemManager {
             }else{
                 requiredBlocks = (fileSize + BLOCK_SIZE - 1) / BLOCK_SIZE;
             }
-            
+
             //copy current blocks of the file to currentBlocks
             short firstBlock = inodeTable[index].getFirstBlock();
             java.util.List<Integer> currentBlocks = new java.util.ArrayList<>();
@@ -216,7 +270,7 @@ public class FileSystemManager {
                 }
             }
 
-            //write content to the target blocks 
+            //write content to the target blocks
             byte[] blockBuffer = new byte[BLOCK_SIZE];
             int bytesWrittenBlocks = 0;
             try {
@@ -245,7 +299,7 @@ public class FileSystemManager {
                 throw new RuntimeException("error writting ", e);
             }
 
-           //update new blocks as used
+            //update new blocks as used
             for (int b : targetBlocks) {
                 freeBlockList[b] = false;
             }
@@ -263,7 +317,7 @@ public class FileSystemManager {
                 }
             }
 
-            //set up blockNext 
+            //set up blockNext
             for (int i = 0; i < requiredBlocks; i++) {
                 int b = targetBlocks[i];
                 int next = (i + 1 < requiredBlocks) ? targetBlocks[i + 1] : -1;
@@ -274,6 +328,7 @@ public class FileSystemManager {
             short first = (requiredBlocks == 0) ? (short) -1 : (short) targetBlocks[0];
             inodeTable[index] = new FEntry(fileName, (short) fileSize, first);
 
+            saveMetadata();
         } finally {
             writeLock.unlock();
         }
