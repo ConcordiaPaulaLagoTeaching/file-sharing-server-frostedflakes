@@ -7,6 +7,8 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Base64;
+import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
 
 public class FileServer {
 
@@ -45,6 +47,7 @@ public class FileServer {
         ) {
             String line;
             while ((line = reader.readLine()) != null) {
+                System.out.println("Received from client " + clientSocket + ": " + line);
                 String[] parts = line.split(" ");
                 String command = parts[0].toUpperCase();
 
@@ -77,26 +80,47 @@ public class FileServer {
                         }
                         writer.flush();
                         break;
-                                        case "WRITE":
-                        // WRITE <filename> <base64_contents>
-                        if (parts.length < 3) {
-                            writer.println("ERROR: Usage: WRITE <filename> <base64_contents>");
-                            break;
-                        }
-                        try {
-                            byte[] data = Base64.getDecoder().decode(parts[2]);
-                            fsManager.writeFile(parts[1], data);
-                            writer.println("File written: " + parts[1]);
-                        } catch (IllegalArgumentException e) {
-                            writer.println("ERROR: " + e.getMessage());
-                        } catch (Exception e) {
-                            writer.println("ERROR: Write failed: " + e.getMessage());
-                        }
-                        writer.flush();
-                        break;
+                                        case "WRITE_RAW":
+                                            //WRITE filename base64_contents
+                                            //needs preprocessing in terminal, ceverting to base 64
+                                            if (parts.length < 3) {
+                                                writer.println("ERROR: Usage: WRITE <filename> <base64_contents>");
+                                                break;
+                                            }
+                                            try {
+                                                byte[] data = Base64.getDecoder().decode(parts[2]);
+                                                fsManager.writeFile(parts[1], data);
+                                                writer.println("File written: " + parts[1]);
+                                            } catch (IllegalArgumentException e) {
+                                                writer.println("ERROR: " + e.getMessage());
+                                            } catch (Exception e) {
+                                                writer.println("ERROR: Write failed: " + e.getMessage());
+                                            }
+                                            writer.flush();
+                                            break;
 
-                    case "READ":
-                        // READ <filename> -> returns base64 payload on single line
+                                        case "WRITE":
+                                            //WRITE filename text  (write normal text in file)
+                                            if (parts.length < 3) {
+                                                writer.println("ERROR: Usage: WRITE <filename> <text_contents>");
+                                                break;
+                                            }
+                                            try {
+                                                
+                                                String payload = String.join(" ", Arrays.copyOfRange(parts, 2, parts.length));
+                                                byte[] data = payload.getBytes(StandardCharsets.UTF_8);
+                                                fsManager.writeFile(parts[1], data);
+                                                writer.println("File written: " + parts[1]);
+                                            } catch (IllegalArgumentException e) {
+                                                writer.println("ERROR: " + e.getMessage());
+                                            } catch (Exception e) {
+                                                writer.println("ERROR: Write failed: " + e.getMessage());
+                                            }
+                                            writer.flush();
+                                            break;
+
+                    case "READ_RAW":
+                        //reads the RAW base64 value (need processing in terminal)
                         if (parts.length < 2) {
                             writer.println("ERROR: Filename not provided");
                             break;
@@ -105,6 +129,25 @@ public class FileServer {
                             byte[] out = fsManager.readFile(parts[1]);
                             String b64 = Base64.getEncoder().encodeToString(out);
                             writer.println("DATA " + b64);
+                        } catch (IllegalArgumentException e) {
+                            writer.println("ERROR: " + e.getMessage());
+                        } catch (Exception e) {
+                            writer.println("ERROR: Read failed: " + e.getMessage());
+                        }
+                        writer.flush();
+                        break;
+
+                    case "READ":
+                        //READ filename gives text output straight
+                        if (parts.length < 2) {
+                            writer.println("ERROR: Filename not provided");
+                            break;
+                        }
+                        try {
+                            byte[] out = fsManager.readFile(parts[1]);
+                            String text = new String(out, StandardCharsets.UTF_8);
+                        
+                            writer.println(text);
                         } catch (IllegalArgumentException e) {
                             writer.println("ERROR: " + e.getMessage());
                         } catch (Exception e) {
