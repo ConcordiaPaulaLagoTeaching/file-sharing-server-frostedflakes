@@ -142,8 +142,6 @@ public class FileSystemManager {
                 throw new IllegalArgumentException("No space for new file.");
             }
 
-            // NOTE: do NOT reinitialize blockNext here; blockNext is persistent metadata
-
             //create a new file entry and assign it to the free index
             inodeTable[freeIndex] = new FEntry(fileName, (short) 0, (short) -1);
 
