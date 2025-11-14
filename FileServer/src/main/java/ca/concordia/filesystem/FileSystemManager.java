@@ -19,6 +19,8 @@ public class FileSystemManager {
     private final ReentrantReadWriteLock.WriteLock writeLock = rwLock.writeLock();
 
     private static final int BLOCK_SIZE = 128; // Example block size
+    // Reserve one block at the start of the disk for metadata so data blocks don't overlap metadata
+    private static final int BLOCK_DATA_OFFSET = BLOCK_SIZE;
 
     private FEntry[] inodeTable; // Array of inodes
     private boolean[] freeBlockList; // Bitmap for free blocks
@@ -61,7 +63,8 @@ public class FileSystemManager {
                 boolean fresh = !f.exists() || this.disk.length() == 0;  // check if disk file is new or empty
 
                 if (fresh) {  // creating a new empty filesystem for the first run
-                    this.disk.setLength(totalSize);
+                    // allocate extra space for metadata block so data blocks start after metadata
+                    this.disk.setLength(totalSize + BLOCK_DATA_OFFSET);
 
                     // Mark all FEntries as unused
                     for (int i = 0; i < MAXFILES; i++)
@@ -139,10 +142,7 @@ public class FileSystemManager {
                 throw new IllegalArgumentException("No space for new file.");
             }
 
-            // initialize block chain metadata (-1 = no next)
-            blockNext = new int[MAXBLOCKS];
-            for (int i = 0; i < MAXBLOCKS; i++)
-                blockNext[i] = -1;
+            // NOTE: do NOT reinitialize blockNext here; blockNext is persistent metadata
 
             //create a new file entry and assign it to the free index
             inodeTable[freeIndex] = new FEntry(fileName, (short) 0, (short) -1);
@@ -184,14 +184,14 @@ public class FileSystemManager {
 
             //free the file’s block
             short firstBlock = inodeTable[index].getFirstBlock();
-            if (firstBlock != -1) {
+                if (firstBlock != -1) {
 
-                freeBlockList[firstBlock] = true;
+                    freeBlockList[firstBlock] = true;
 
-                disk.seek(firstBlock * BLOCK_SIZE);
-                byte[] zeros = new byte[BLOCK_SIZE];
-                disk.write(zeros);
-            }
+                    disk.seek(((long) firstBlock * BLOCK_SIZE) + BLOCK_DATA_OFFSET);
+                    byte[] zeros = new byte[BLOCK_SIZE];
+                    disk.write(zeros);
+                }
 
             //clear the entry
             inodeTable[index] = new FEntry("", (short) 0, (short) -1);
@@ -281,7 +281,7 @@ public class FileSystemManager {
                     //do buffer
                     java.util.Arrays.fill(blockBuffer, (byte) 0);
                     if (len > 0) System.arraycopy(contents, offset, blockBuffer, 0, len);
-                    disk.seek((long) blockIndex * BLOCK_SIZE);
+                    disk.seek(((long) blockIndex * BLOCK_SIZE) + BLOCK_DATA_OFFSET);
                     disk.write(blockBuffer);
                     bytesWrittenBlocks++;
                 }
@@ -291,7 +291,7 @@ public class FileSystemManager {
                     byte[] zeros = new byte[BLOCK_SIZE];
                     for (int j = 0; j < bytesWrittenBlocks; j++) {
                         int b = targetBlocks[j];
-                        disk.seek((long) b * BLOCK_SIZE);
+                        disk.seek(((long) b * BLOCK_SIZE) + BLOCK_DATA_OFFSET);
                         disk.write(zeros);
                     }
                 } catch (Exception ignored) {
@@ -310,7 +310,7 @@ public class FileSystemManager {
                 for (int b : targetBlocks) if (b == oldB) { stillUsed = true; break; }
                 if (!stillUsed) {
                     freeBlockList[oldB] = true;
-                    disk.seek((long) oldB * BLOCK_SIZE);
+                    disk.seek(((long) oldB * BLOCK_SIZE) + BLOCK_DATA_OFFSET);
                     byte[] zeros = new byte[BLOCK_SIZE];
                     disk.write(zeros);
                     blockNext[oldB] = -1;
@@ -363,7 +363,7 @@ public class FileSystemManager {
 
             while (current != -1 && written < fileSize) {
                 if (current < 0 || current >= MAXBLOCKS) throw new IllegalStateException("bad index: " + current);
-                disk.seek((long) current * BLOCK_SIZE);
+                disk.seek(((long) current * BLOCK_SIZE) + BLOCK_DATA_OFFSET);
                 int toRead = Math.min(BLOCK_SIZE, fileSize - written);
                 //read block and copy
                 disk.readFully(blockBuf);
